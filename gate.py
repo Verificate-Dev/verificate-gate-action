@@ -53,8 +53,15 @@ def mcp_validate(code, lang):
     resp = rpc("tools/call", {"name":"validate_ai_output",
                "arguments":{"ai_output":code,"validation_type":"code_generation","context":{"language":lang}}}, 2)
     parts = resp.get("result", {}).get("content", [])
-    text = "\n".join(p.get("text","") for p in parts if p.get("type")=="text")
-    return json.loads(text) if text.strip().startswith("{") else {"text": text}
+    text = "\n".join(p.get("text","") for p in parts if p.get("type")=="text").strip()
+    if text.startswith("{"):
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(text)  # first JSON object; ignore trailing trial note
+            return obj
+        except json.JSONDecodeError:
+            pass
+    # Not a verdict (e.g. free-tier upsell / trial note) — the gate could not score this.
+    return {"_unavailable": True, "text": text[:200]}
 
 def upsert_comment(pr, body):
     try:
@@ -94,6 +101,10 @@ def main():
             errors += 1
             print(f"::warning::Verificate gate error on {f['filename']}: {type(e).__name__}: {str(e)[:160]}")
             rows.append((f["filename"], "⚠️ gate error (skipped)", "")); continue
+        if res.get("_unavailable"):
+            errors += 1
+            print(f"::warning::Verificate gate unavailable for {f['filename']} (free-tier cap? set a VERIFICATE_API_KEY secret to lift it).")
+            rows.append((f["filename"], "⚠️ gate unavailable (skipped)", "")); continue
         prot = res.get("protection", {})
         vetoed = bool(prot.get("vetoed"))
         rejected = vetoed or res.get("valid") is False or str(res.get("assessment",{}).get("verdict","")).lower() in ("reject","rejected")
