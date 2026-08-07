@@ -1,0 +1,16 @@
+# Drop this at .github/workflows/verificate-gate.yml
+name: Verificate Gate
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  verificate-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Verificate-Dev/verificate-gate-action@v1
+        with:
+          verificate-api-key: ${{ secrets.VERIFICATE_API_KEY }}   # optional
+          fail-on: reject
