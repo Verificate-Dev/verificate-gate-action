@@ -36,7 +36,8 @@ def gh(path, method="GET", data=None):
 def mcp_validate(code, lang):
     def rpc(method, params, rid):
         body = json.dumps({"jsonrpc":"2.0","id":rid,"method":method,"params":params}).encode()
-        h = {"Content-Type":"application/json","Accept":"application/json, text/event-stream"}
+        h = {"Content-Type":"application/json","Accept":"application/json, text/event-stream",
+             "User-Agent":"verificate-gate/1.0 (+https://verificate.ai)"}
         if VKEY: h["Authorization"] = f"Bearer {VKEY}"
         req = urllib.request.Request(MCP_URL, data=body, method="POST", headers=h)
         raw = urllib.request.urlopen(req, context=_ctx, timeout=120).read().decode()
@@ -91,6 +92,7 @@ def main():
             res = mcp_validate(code, LANG.get(ext, "text"))
         except Exception as e:
             errors += 1
+            print(f"::warning::Verificate gate error on {f['filename']}: {type(e).__name__}: {str(e)[:160]}")
             rows.append((f["filename"], "⚠️ gate error (skipped)", "")); continue
         prot = res.get("protection", {})
         vetoed = bool(prot.get("vetoed"))
