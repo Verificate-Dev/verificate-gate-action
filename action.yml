@@ -1,0 +1,33 @@
+name: "Verificate Gate"
+description: "Gate AI-written code changes on a pull request with the Verificate merge gate (veto = blocks merge)."
+branding: { icon: "shield", color: "green" }
+inputs:
+  verificate-api-key:
+    description: "Optional Verificate token (avoids the free-tier per-runner cap on busy repos)."
+    required: false
+    default: ""
+  fail-on:
+    description: "'reject' = fail the check (block merge) on a veto; 'off' = comment only."
+    required: false
+    default: "reject"
+  max-files:
+    description: "Max changed code files to review per PR."
+    required: false
+    default: "25"
+  mcp-url:
+    description: "Verificate MCP endpoint."
+    required: false
+    default: "https://mcp.verificate.ai/mcp"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@v5
+      with: { python-version: "3.11" }
+    - run: python "${{ github.action_path }}/gate.py"
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        VERIFICATE_API_KEY: ${{ inputs.verificate-api-key }}
+        VERIFICATE_MCP_URL: ${{ inputs.mcp-url }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        MAX_FILES: ${{ inputs.max-files }}
