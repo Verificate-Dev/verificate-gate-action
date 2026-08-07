@@ -54,6 +54,8 @@ jobs:
 
 Then make it required: **Settings → Branches → Require status checks → `verificate-gate`.** Now nothing merges while the gate vetoes an AI-written change.
 
+> **First run on CI?** The no-key free tier is shared per runner IP, so on busy shared runners it can already be used up. Grab your **own** free key (no card, 30 days — [verificate.ai/auth/signup](https://verificate.ai/auth/signup)) and add it as a repo secret named `VERIFICATE_API_KEY`. That gives you a private quota that isn't affected by other repos on the same runner. The gate always fails **open**, so a used-up trial never blocks your merge — it just skips and tells you how to get a key.
+
 ## Inputs
 | Input | Default | Description |
 |---|---|---|
