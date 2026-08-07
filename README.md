@@ -52,7 +52,15 @@ jobs:
           fail-on: reject
 ```
 
-Then make it required: **Settings → Branches → Require status checks → `verificate-gate`.** Now nothing merges while the gate vetoes an AI-written change.
+**To revert, delete the step.** No cleanup, no state left behind.
+
+## Roll it out without fear of breaking CI
+Adopt in three steps — start where you're comfortable and graduate when you trust it:
+
+1. **Report-only** — set `fail-on: off`. The gate reviews every PR and comments its verdict, but **never fails the check**. Watch it for a week; see what it catches on your real PRs.
+2. **Required** — set `fail-on: reject` and add `verificate-gate` under **Settings → Branches → Require status checks**. Now a veto blocks the merge until it's fixed.
+
+Vetoes come only from the deterministic reality gates (hallucinated API, mock/placeholder, reward-gaming) — high-signal, **0 false positives on clean code** in our benchmark — so the jump to required rarely surprises anyone.
 
 > **First run on CI?** The no-key free tier is shared per runner IP, so on busy shared runners it can already be used up. Grab your **own** free key (no card, 30 days — [verificate.ai/auth/signup](https://verificate.ai/auth/signup)) and add it as a repo secret named `VERIFICATE_API_KEY`. That gives you a private quota that isn't affected by other repos on the same runner. The gate always fails **open**, so a used-up trial never blocks your merge — it just skips and tells you how to get a key.
 
@@ -67,6 +75,14 @@ Then make it required: **Settings → Branches → Require status checks → `ve
 - **Fails closed only on a real veto** (blocks merge). **Fails *open* on any infra error** (gate unreachable, timeout) — a gate outage never blocks your team's merges.
 - Reviews only **changed** code files. No code is executed — read-only.
 - No signup required to try. Works with public or private repos.
+
+## Security & data handling
+- **Permissions:** `contents: read` (to read the changed files) and `pull-requests: write` (to post the summary comment). Nothing else.
+- **What leaves your runner:** the **text of the changed code files** is sent over HTTPS to the Verificate MCP endpoint (`mcp.verificate.ai`, default) for review, and the verdict comes back. Your `GITHUB_TOKEN` never leaves the runner.
+- **No code execution.** Files are read and analysed, never run.
+- **Self-hostable endpoint:** point `mcp-url` at your own deployment if you'd rather your code never leave your infrastructure.
+- **Secrets:** the optional `verificate-api-key` is read from a repo secret; GitHub withholds secrets from fork-originated PRs, so it's never exposed to untrusted forks.
+- **Pinning:** use `@v1` for automatic patches, or pin to a full commit SHA for byte-exact builds. Releases are tagged and changelogged.
 
 ---
 *Verificate — the merge gate for AI-written code. [verificate.ai](https://verificate.ai)*
