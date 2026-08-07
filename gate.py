@@ -90,7 +90,7 @@ def main():
         upsert_comment(pr, f"{MARK}\n### ✅ Verificate Gate — no code changes to review.")
         print("No code files changed."); return 0
 
-    rows, vetoed_any, errors = [], False, 0
+    rows, vetoed_any, errors, capped = [], False, 0, False
     for f in targets:
         ext = "." + f["filename"].rsplit(".",1)[-1]
         try:
@@ -102,9 +102,10 @@ def main():
             print(f"::warning::Verificate gate error on {f['filename']}: {type(e).__name__}: {str(e)[:160]}")
             rows.append((f["filename"], "⚠️ gate error (skipped)", "")); continue
         if res.get("_unavailable"):
-            errors += 1
-            print(f"::warning::Verificate gate unavailable for {f['filename']} (free-tier cap? set a VERIFICATE_API_KEY secret to lift it).")
-            rows.append((f["filename"], "⚠️ gate unavailable (skipped)", "")); continue
+            errors += 1; capped = True
+            print(f"::warning::Verificate gate unavailable for {f['filename']} — shared free-tier limit reached on this runner. "
+                  f"Add a VERIFICATE_API_KEY secret (free, no card: https://verificate.ai/auth/signup) to get your own quota.")
+            rows.append((f["filename"], "⚠️ skipped — free limit reached", "")); continue
         prot = res.get("protection", {})
         vetoed = bool(prot.get("vetoed"))
         rejected = vetoed or res.get("valid") is False or str(res.get("assessment",{}).get("verdict","")).lower() in ("reject","rejected")
@@ -128,6 +129,12 @@ def main():
                   "A veto is authoritative and cannot be overridden."]
     else:
         lines += ["", "No veto. " + ("Warnings noted above." if errors else "Changes cleared the gate.")]
+    if capped:
+        lines += ["", "> ⚠️ **Some files were skipped — the shared free trial on this runner is used up, so the gate couldn't score them.** "
+                  "The gate failed **open**, so this did **not** block your merge. "
+                  "To get your own quota (free, no card, 30 days), sign up at "
+                  "[verificate.ai/auth/signup](https://verificate.ai/auth/signup) and add the key as a repo secret named "
+                  "**`VERIFICATE_API_KEY`** — validations resume on the next push."]
     lines += ["", "_Verificate — the merge gate for AI-written code. [Why](https://github.com/Verificate-Dev/verificate-mcp-quickstart/blob/master/COMPARISON.md)_"]
     upsert_comment(pr, "\n".join(lines))
 
