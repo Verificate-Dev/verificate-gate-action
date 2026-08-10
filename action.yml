@@ -1,5 +1,5 @@
 name: "Verificate Gate"
-description: "Gate AI-written code changes on a pull request with the Verificate merge gate (veto = blocks merge)."
+description: "AI-powered CI gate that blocks AI hallucinations in pull requests and runs ISO 5055 quality checks."
 branding: { icon: "shield", color: "green" }
 inputs:
   verificate-api-key:
