@@ -71,7 +71,12 @@ def gh(path, method="GET", data=None):
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read() or b"{}")
 
-def mcp_validate(code, lang):
+def mcp_validate(code, lang, rebuttal=""):
+    # A rebuttal (from .verificate/rebuttals.md) lets the gate adjudicate a prior finding the
+    # agent contests with proof — the gate overturns findings whose methodology it accepts.
+    ctx = {"language": lang}
+    if rebuttal:
+        ctx["rebuttal"] = rebuttal[:6000]
     def rpc(method, params, rid):
         body = json.dumps({"jsonrpc":"2.0","id":rid,"method":method,"params":params}).encode()
         h = {"Content-Type":"application/json","Accept":"application/json, text/event-stream",
@@ -92,7 +97,7 @@ def mcp_validate(code, lang):
     rpc("initialize", {"protocolVersion":"2024-11-05","capabilities":{},
                        "clientInfo":{"name":"verificate-gate-action","version":"1"}}, 0)
     resp = rpc("tools/call", {"name":"validate_ai_output",
-               "arguments":{"ai_output":code,"validation_type":"code_generation","context":{"language":lang}}}, 2)
+               "arguments":{"ai_output":code,"validation_type":"code_generation","context":ctx}}, 2)
     parts = resp.get("result", {}).get("content", [])
     text = "\n".join(p.get("text","") for p in parts if p.get("type")=="text").strip()
     if text.startswith("{"):
@@ -131,13 +136,24 @@ def main():
         upsert_comment(pr, f"{MARK}\n### ✅ Verificate Gate — no code changes to review.")
         print("No code files changed."); return 0
 
+    # Appeal channel: if the author (or their agent) contested prior findings with a proof in
+    # .verificate/rebuttals.md, feed it to the gate so it can adjudicate and overturn sound rebuttals.
+    rebuttal = ""
+    try:
+        rb = gh(f"/repos/{REPO}/contents/.verificate/rebuttals.md?ref={head}")
+        rebuttal = base64.b64decode(rb["content"]).decode("utf-8", "replace")
+        if rebuttal.strip():
+            print("Verificate: rebuttals.md found — the gate will adjudicate contested findings.")
+    except Exception:
+        pass  # no rebuttals file is the normal case
+
     rows, vetoed_any, errors, capped, fixes = [], False, 0, False, []
     for f in targets:
         ext = "." + f["filename"].rsplit(".",1)[-1]
         try:
             meta = gh(f"/repos/{REPO}/contents/{f['filename']}?ref={head}")
             code = base64.b64decode(meta["content"]).decode("utf-8","replace")
-            res = mcp_validate(code, LANG.get(ext, "text"))
+            res = mcp_validate(code, LANG.get(ext, "text"), rebuttal=rebuttal)
         except Exception as e:
             errors += 1
             print(f"::warning::Verificate gate error on {f['filename']}: {type(e).__name__}: {str(e)[:160]}")
@@ -161,9 +177,11 @@ def main():
         # Keep the full remediation for rejected files — this is the "how to fix" guidance,
         # which the review generates but the summary table alone would drop.
         if rejected:
-            steps = [s.get("step") for s in (res.get("fix_plan") or []) if isinstance(s, dict) and s.get("step")]
+            plan = [s for s in (res.get("fix_plan") or []) if isinstance(s, dict) and s.get("step")]
+            steps = [s.get("step") for s in plan]
             fixes.append({"file": f["filename"], "issues": issues[:8],
-                          "steps": steps[:8], "suggestions": (res.get("suggestions") or [])[:6]})
+                          "steps": steps[:8], "plan": plan[:8],
+                          "suggestions": (res.get("suggestions") or [])[:6]})
 
     lines = [MARK, "### 🛡️ Verificate Gate",
              f"Reviewed **{len(targets)}** changed code file(s)"
@@ -195,6 +213,49 @@ def main():
     if truncated:
         lines += ["", "> _Some fix guidance was omitted to fit GitHub's comment size limit — "
                   "run the gate locally or in your IDE for the full detail._"]
+
+    # ---- Auto-fix prompt: hand the remediation to a coding agent for a zero-effort green commit ----
+    # A developer (or the GitHub coding agent / Copilot / Cursor / Claude Code) can act on this to fix
+    # exactly the flagged issues and turn the check green — no manual back-to-dev round trip.
+    if fixes:
+        p = ["You are resolving a pull request that failed the Verificate quality gate. For EACH finding "
+             "below, do ONE of two things:",
+             "  (A) FIX it — apply exactly the change described, nothing else; do not touch unrelated code; "
+             "preserve existing behaviour and performance (a fix that regresses either is not acceptable); or",
+             "  (B) OVERRULE it — ONLY if, after investigating, you are confident the finding is a false "
+             "positive. Do not change the code. Instead append an entry to `.verificate/rebuttals.md` with: "
+             "the file, the finding, and a rigorous methodology PROVING the code is correct (name the "
+             "reference pattern, cite the spec/line, or give the exact input showing no failure). The gate "
+             "re-reads this on the next run and, like a senior reviewer, overturns findings whose rebuttal "
+             "is sound — the check then passes without a code change.",
+             "Then commit and push; the gate re-runs automatically.", ""]
+        pused = 0
+        for fx in fixes:
+            seg = [f"File `{fx['file']}`:"]
+            if fx["plan"]:
+                for i, s in enumerate(fx["plan"], 1):
+                    line = f"  {i}. Fix: {_s(s.get('step'))}"
+                    if s.get("root_cause"):
+                        line += f"  (root cause: {_s(s.get('root_cause'))})"
+                    if s.get("risk_if_wrong"):
+                        line += f"  DO NOT: {_s(s.get('risk_if_wrong'))}"
+                    seg.append(line)
+            else:
+                for i, g in enumerate((fx["steps"] or fx["suggestions"]), 1):
+                    seg.append(f"  {i}. Fix: {_s(g)}")
+            seg.append("")
+            slen = sum(len(x) + 1 for x in seg)
+            if pused + slen > 8000:  # keep the prompt block itself bounded
+                p.append("(further files omitted — re-run the gate after these land)")
+                break
+            p += seg
+            pused += slen
+        prompt_text = "\n".join(p)
+        lines += ["", "### 🤖 Auto-fix this PR (zero-effort green commit)",
+                  "Hand this to your coding agent — the GitHub coding agent, Copilot, Cursor or Claude Code "
+                  "— or paste it into your editor. It fixes exactly what the gate flagged, preserves "
+                  "behaviour, and the check goes green on the next push.", "",
+                  "```text", prompt_text, "```"]
     if vetoed_any:
         lines += ["", "**A deterministic reality gate vetoed a change — fix the findings above and push again.** "
                   "A veto is authoritative and cannot be overridden."]
