@@ -9,7 +9,25 @@ Env: GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_EVENT_PATH, optional VERIFICATE_MCP
 VERIFICATE_API_KEY, FAIL_ON (reject|off), MAX_FILES.
 """
 from __future__ import annotations
-import base64, json, os, ssl, sys, urllib.request, urllib.error
+import base64, html, json, os, ssl, sys, urllib.request, urllib.error
+
+COMMENT_MAX = 60000  # keep under GitHub's 65536-char comment limit
+
+def _s(v):
+    """Coerce a finding (str or dict) to a clean one-line string."""
+    if isinstance(v, dict):
+        v = v.get("description") or v.get("message") or v.get("step") or json.dumps(v)
+    return " ".join(str(v).split())
+
+def cell(v):
+    """Safe for a markdown table cell: no pipes or newlines break the table."""
+    return _s(v).replace("|", "\\|")[:180]
+
+def md(v):
+    """Safe for markdown/HTML body text: escape angle brackets so AI text can't
+    close our <details> block or inject HTML. Slice BEFORE escaping so we never
+    split an HTML entity (e.g. '&lt;')."""
+    return html.escape(_s(v)[:220], quote=False)
 
 REPO = os.environ.get("GITHUB_REPOSITORY", "")
 TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -113,7 +131,7 @@ def main():
         upsert_comment(pr, f"{MARK}\n### ✅ Verificate Gate — no code changes to review.")
         print("No code files changed."); return 0
 
-    rows, vetoed_any, errors, capped = [], False, 0, False
+    rows, vetoed_any, errors, capped, fixes = [], False, 0, False, []
     for f in targets:
         ext = "." + f["filename"].rsplit(".",1)[-1]
         try:
@@ -139,14 +157,44 @@ def main():
         detail = ("vetoed by " + ", ".join(prot.get("vetoed_by") or [])) if vetoed else (f"score {score}" if score is not None else "")
         rows.append((f["filename"], status, detail))
         for iss in issues[:4]:
-            rows.append(("　↳", str(iss)[:140], ""))
+            rows.append(("　↳", cell(iss), ""))
+        # Keep the full remediation for rejected files — this is the "how to fix" guidance,
+        # which the review generates but the summary table alone would drop.
+        if rejected:
+            steps = [s.get("step") for s in (res.get("fix_plan") or []) if isinstance(s, dict) and s.get("step")]
+            fixes.append({"file": f["filename"], "issues": issues[:8],
+                          "steps": steps[:8], "suggestions": (res.get("suggestions") or [])[:6]})
 
     lines = [MARK, "### 🛡️ Verificate Gate",
              f"Reviewed **{len(targets)}** changed code file(s)"
              + (f" · {errors} skipped (gate error)" if errors else "") + ".", "",
              "| File | Verdict | Detail |", "|---|---|---|"]
     for name, status, detail in rows:
-        lines.append(f"| `{name}` | {status} | {detail} |")
+        lines.append(f"| {cell(name)} | {status} | {cell(detail)} |")
+    # Per-file remediation — the actionable "how to fix", collapsed so the comment stays tidy.
+    # Budget the total length (running counter) so a big PR can't exceed GitHub's comment limit;
+    # reserve headroom for the truncation footer.
+    truncated = False
+    used = sum(len(x) + 1 for x in lines)
+    for fx in fixes:
+        block = ["", f"<details><summary>🔧 How to fix <code>{md(fx['file'])}</code></summary>", ""]
+        if fx["issues"]:
+            block.append("**What was caught:**")
+            block += [f"- {md(i)}" for i in fx["issues"]]
+        guidance = fx["steps"] or fx["suggestions"]
+        if guidance:
+            block += ["", "**How to fix:**"]
+            block += [f"{n}. {md(g)}" for n, g in enumerate(guidance, 1)]
+        block += ["", "</details>"]
+        blen = sum(len(x) + 1 for x in block)
+        if used + blen > COMMENT_MAX - 200:  # reserve 200 chars for the footer
+            truncated = True
+            break
+        lines += block
+        used += blen
+    if truncated:
+        lines += ["", "> _Some fix guidance was omitted to fit GitHub's comment size limit — "
+                  "run the gate locally or in your IDE for the full detail._"]
     if vetoed_any:
         lines += ["", "**A deterministic reality gate vetoed a change — fix the findings above and push again.** "
                   "A veto is authoritative and cannot be overridden."]
