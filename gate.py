@@ -13,6 +13,9 @@ import base64, json, os, ssl, sys, urllib.request, urllib.error
 
 REPO = os.environ.get("GITHUB_REPOSITORY", "")
 TOKEN = os.environ.get("GITHUB_TOKEN", "")
+# GitHub Actions OIDC: present only if the caller's workflow grants `permissions: id-token: write`.
+OIDC_REQ_URL = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL", "")
+OIDC_REQ_TOKEN = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")
 MCP_URL = os.environ.get("VERIFICATE_MCP_URL", "https://mcp.verificate.ai/mcp")
 VKEY = os.environ.get("VERIFICATE_API_KEY", "").strip()
 FAIL_ON = os.environ.get("FAIL_ON", "reject").strip().lower()
@@ -23,6 +26,23 @@ CODE_EXT = {".py",".js",".ts",".tsx",".jsx",".go",".java",".rb",".rs",".c",".cc"
 LANG = {".py":"python",".js":"javascript",".ts":"typescript",".tsx":"typescript",".jsx":"javascript",
         ".go":"go",".java":"java",".rb":"ruby",".rs":"rust",".cpp":"cpp",".cs":"csharp",".php":"php",".sql":"sql"}
 _ctx = ssl.create_default_context()
+
+def github_oidc_token():
+    """Fetch a GitHub Actions OIDC JWT (audience=verificate-gate) so the gate's free tier
+    can meter per-repository instead of per shared-runner IP. Returns '' if the workflow
+    didn't grant `permissions: id-token: write` — the gate then falls back to the IP tier."""
+    if not OIDC_REQ_URL or not OIDC_REQ_TOKEN:
+        return ""
+    try:
+        req = urllib.request.Request(OIDC_REQ_URL + "&audience=verificate-gate",
+            headers={"Authorization": f"Bearer {OIDC_REQ_TOKEN}", "User-Agent": "verificate-gate"})
+        with urllib.request.urlopen(req, context=_ctx, timeout=15) as r:
+            return (json.loads(r.read() or b"{}").get("value") or "").strip()
+    except Exception as e:
+        print(f"::warning::could not obtain OIDC token ({type(e).__name__}); using IP free tier.")
+        return ""
+
+_OIDC = github_oidc_token()
 
 def gh(path, method="GET", data=None):
     req = urllib.request.Request("https://api.github.com" + path, method=method,
@@ -38,6 +58,9 @@ def mcp_validate(code, lang):
         body = json.dumps({"jsonrpc":"2.0","id":rid,"method":method,"params":params}).encode()
         h = {"Content-Type":"application/json","Accept":"application/json, text/event-stream",
              "User-Agent":"verificate-gate/1.0 (+https://verificate.ai)"}
+        # Signed OIDC token → the portal meters the free tier per-repository (not per
+        # shared runner IP) with the repo identity proven, not merely claimed.
+        if _OIDC: h["X-Verificate-OIDC"] = _OIDC
         if VKEY: h["Authorization"] = f"Bearer {VKEY}"
         req = urllib.request.Request(MCP_URL, data=body, method="POST", headers=h)
         raw = urllib.request.urlopen(req, context=_ctx, timeout=120).read().decode()

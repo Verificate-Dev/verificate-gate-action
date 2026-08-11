@@ -27,7 +27,10 @@ name: Verificate Gate
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-permissions: { contents: read, pull-requests: write }
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write      # lets the gate claim your repo's own free quota (see below)
 jobs:
   verificate-gate:
     runs-on: ubuntu-latest
@@ -36,6 +39,8 @@ jobs:
 ```
 
 That's it. No signup, no API key, free to try — the next pull request gets checked. To remove it, delete the file.
+
+The `id-token: write` permission is what makes the free tier reliable in CI: GitHub-hosted runners share IP addresses across everyone, so an IP-based free quota gets used up by unrelated repos before your first run. With that permission, the gate proves your repository identity with a signed GitHub token and draws on **your repository's own free quota** instead — so your first run actually reviews your code. Leave the permission off and it still works, just falling back to the shared per-runner quota (which may already be used up).
 
 ## What you get
 
