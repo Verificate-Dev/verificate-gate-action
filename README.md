@@ -108,3 +108,17 @@ All settings are optional.
 
 ---
 *Verificate — the merge gate for AI-written code. [verificate.ai](https://verificate.ai)*
+
+## New in v2 — cross-file context (Verificate Context Graph)
+
+The gate now builds a **Verificate Context Graph** across your repo before reviewing changed files, so it
+reasons about code the way an attacker (and a good reviewer) does — **across file boundaries**:
+
+- **Fewer false positives.** It no longer flags a "sandbox escape" or "prototype pollution" that a sanitizer
+  or blocklist in *another file* already blocks — the graph proves the vector is guarded.
+- **Catches cross-file vulnerabilities.** It traces an untrusted **source** (e.g. `req.query.path`) across a
+  file boundary into a dangerous **sink** (e.g. `writeFileSync`) and raises it when nothing guards the path —
+  a class of bug that single-file review, linters, and one-shot LLM review structurally cannot find.
+- **SARIF output.** Findings publish to your repo's **Security** tab; sustained criticals fail the build.
+
+Inputs are unchanged (`verificate-api-key`, `fail-on`, `max-files`, `mcp-url`) plus `mode` (`changed` | `all`).

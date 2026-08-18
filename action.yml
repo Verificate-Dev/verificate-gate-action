@@ -1,5 +1,5 @@
 name: "Verificate Gate"
-description: "AI-powered CI gate that blocks AI hallucinations in pull requests and runs ISO 5055 quality checks."
+description: "AI CI gate with cross-file context (Verificate Context Graph): blocks AI hallucinations, suppresses false-positives a guard in another file already blocks, catches cross-file taint (source in file A -> sink in file B), runs ISO/IEC 5055 checks, and publishes SARIF."
 branding: { icon: "shield", color: "green" }
 inputs:
   verificate-api-key:
@@ -7,7 +7,7 @@ inputs:
     required: false
     default: ""
   fail-on:
-    description: "'reject' = fail the check (block merge) on a veto; 'off' = comment only."
+    description: "'reject' = fail the check (block merge) on a sustained critical; 'off' = report only."
     required: false
     default: "reject"
   max-files:
@@ -18,16 +18,32 @@ inputs:
     description: "Verificate MCP endpoint."
     required: false
     default: "https://mcp.verificate.ai/mcp"
+  mode:
+    description: "'changed' = review the PR diff (default); 'all' = review the whole repo."
+    required: false
+    default: "changed"
 runs:
   using: "composite"
   steps:
     - uses: actions/setup-python@v5
       with: { python-version: "3.11" }
-    - run: python "${{ github.action_path }}/gate.py"
+    - name: Verificate Gate — cross-file review
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
         VERIFICATE_API_KEY: ${{ inputs.verificate-api-key }}
         VERIFICATE_MCP_URL: ${{ inputs.mcp-url }}
-        FAIL_ON: ${{ inputs.fail-on }}
         MAX_FILES: ${{ inputs.max-files }}
+        VERIFICATE_BASE: ${{ github.event.pull_request.base.ref && format('origin/{0}', github.event.pull_request.base.ref) || 'origin/main' }}
+      run: |
+        FAILON=critical; [ "${{ inputs.fail-on }}" = "off" ] && FAILON=never
+        MODEFLAG="--changed"; [ "${{ inputs.mode }}" = "all" ] && MODEFLAG="--all"
+        python "${{ github.action_path }}/verificate_review.py" \
+          --repo . $MODEFLAG --max-files "${{ inputs.max-files }}" \
+          --fail-on "$FAILON" --sarif verificate.sarif
+    - name: Publish findings to code scanning (SARIF)
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: verificate.sarif
