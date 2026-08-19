@@ -59,6 +59,7 @@ Every pull request gets a clear verdict, in plain English, right on the PR:
 - **Broken AI code never reaches your application.** A rejected change turns the check red and GitHub blocks the merge until it's fixed.
 - **A tireless first reviewer.** Humans skim; the gate reads every changed file, every time.
 - **It catches what AI review misses.** In our published benchmark, a leading AI model asked to review its own code caught **0 of 6** planted problems (a fake API and a self-passing test). Verificate Gate caught **6 of 6**, every run. [See the benchmark →](https://github.com/Verificate-Dev/verificate-mcp-quickstart/blob/master/COMPARISON.md)
+- **Low noise, not just high recall.** The gate reasons about *reachability*: a `subprocess`/`exec`/`import` call fed by a CLI argument, a local config value, or a trusted literal is the intended behaviour of a dev tool or build script — not command injection — so it is not flagged. You get the real defects without a wall of false alarms that trains people to ignore the check.
 
 ## The problem: AI writes the code, humans carry the review
 

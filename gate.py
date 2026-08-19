@@ -75,6 +75,14 @@ def mcp_validate(code, lang, rebuttal=""):
     # A rebuttal (from .verificate/rebuttals.md) lets the gate adjudicate a prior finding the
     # agent contests with proof — the gate overturns findings whose methodology it accepts.
     ctx = {"language": lang}
+    # Injection-reachability: suppress false "injection/RCE" findings whose sink is fed only by an
+    # operator-controlled source (a CLI arg, local config, a trusted literal) rather than untrusted input.
+    try:
+        import taint
+        _t = taint.analyze(code)
+        ctx["security_graph"] = {"injection_reachable": _t["injection_reachable"], "taint_flows": _t["flows"]}
+    except Exception:
+        pass
     if rebuttal:
         ctx["rebuttal"] = rebuttal[:6000]
     def rpc(method, params, rid):
