@@ -138,8 +138,13 @@ def main():
         files = gh(f"/repos/{REPO}/pulls/{pr}/files?per_page=100")
     except Exception as e:
         print(f"::warning::could not list files ({e}); failing open."); return 0
-    targets = [f for f in files if f.get("status") in ("added","modified")
-               and any(f["filename"].endswith(e) for e in CODE_EXT)][:MAX_FILES]
+    eligible = [f for f in files if f.get("status") in ("added","modified")
+                and any(f["filename"].endswith(e) for e in CODE_EXT)]
+    targets = eligible[:MAX_FILES]
+    dropped = len(eligible) - len(targets)
+    if dropped:
+        print(f"::warning::Verificate Gate reviewed the first {MAX_FILES} of {len(eligible)} changed code files; "
+              f"{dropped} were left unreviewed. Raise max-files to cover the whole PR.")
     if not targets:
         upsert_comment(pr, f"{MARK}\n### ✅ Verificate Gate — no code changes to review.")
         print("No code files changed."); return 0
@@ -155,7 +160,7 @@ def main():
     except Exception:
         pass  # no rebuttals file is the normal case
 
-    rows, vetoed_any, errors, capped, fixes = [], False, 0, False, []
+    rows, vetoed_any, rejected_any, errors, capped, fixes = [], False, False, 0, False, []
     for f in targets:
         ext = "." + f["filename"].rsplit(".",1)[-1]
         try:
@@ -177,6 +182,7 @@ def main():
         score = res.get("score")
         issues = res.get("issues") or []
         if vetoed: vetoed_any = True
+        if rejected: rejected_any = True
         status = "❌ REJECTED" if rejected else "✅ approved"
         detail = ("vetoed by " + ", ".join(prot.get("vetoed_by") or [])) if vetoed else (f"score {score}" if score is not None else "")
         rows.append((f["filename"], status, detail))
@@ -267,21 +273,28 @@ def main():
     if vetoed_any:
         lines += ["", "**A deterministic reality gate vetoed a change — fix the findings above and push again.** "
                   "A veto is authoritative and cannot be overridden."]
+    elif rejected_any:
+        lines += ["", "**A change was REJECTED — fix the findings above and push again.** "
+                  "The check stays red until every reviewed file passes."]
     else:
-        lines += ["", "No veto. " + ("Warnings noted above." if errors else "Changes cleared the gate.")]
+        lines += ["", "No blocking findings. " + ("Warnings noted above." if errors else "Changes cleared the gate.")]
     if capped:
         lines += ["", "> ⚠️ **Some files were skipped — the shared free trial on this runner is used up, so the gate couldn't score them.** "
                   "The gate failed **open**, so this did **not** block your merge. "
                   "To get your own quota (free, no card, 30 days), sign up at "
                   "[verificate.ai/auth/signup](https://verificate.ai/auth/signup) and add the key as a repo secret named "
                   "**`VERIFICATE_API_KEY`** — validations resume on the next push."]
-    lines += ["", "_Verificate — the merge gate for AI-written code. [Why](https://github.com/Verificate-Dev/verificate-mcp-quickstart/blob/master/COMPARISON.md)_"]
+    if dropped:
+        lines += ["", f"> ⚠️ **This PR changed {len(eligible)} code files; the gate reviewed the first "
+                  f"{MAX_FILES} and left {dropped} unreviewed.** Raise `max-files` to cover the whole PR."]
+    lines += ["", "_Verificate — the merge gate for AI-written code. [Why](https://github.com/VerificateAI/verificate-mcp-quickstart/blob/master/COMPARISON.md)_"]
     upsert_comment(pr, "\n".join(lines))
 
-    if vetoed_any and FAIL_ON == "reject":
-        print("::error::Verificate Gate: a change was VETOED — blocking merge until fixed.")
+    if (vetoed_any or rejected_any) and FAIL_ON == "reject":
+        why = "VETOED by a deterministic reality gate" if vetoed_any else "REJECTED"
+        print(f"::error::Verificate Gate: a change was {why} — blocking merge until fixed.")
         return 1
-    print("Verificate Gate: passed (no veto).")
+    print("Verificate Gate: passed.")
     return 0
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 **Verificate Gate is an AI-powered CI gate for GitHub.** It protects your repository from AI hallucination — code that looks right but isn't real — and performs automated checks for **security, reliability, performance efficiency and maintainability (ISO 5055)** on every pull request. If a change has a real problem, the pull request is blocked until it's fixed.
 
 [![Verificate Gate](https://img.shields.io/badge/gated%20by-Verificate-2ea44f?logo=shield)](https://github.com/VerificateAI/verificate-gate-action)
-[![Benchmark](https://img.shields.io/badge/AI%20self--review%200%2F6%20%E2%86%92%20Gate%206%2F6-2ea44f)](https://github.com/Verificate-Dev/verificate-mcp-quickstart/blob/master/COMPARISON.md)
+[![Benchmark](https://img.shields.io/badge/AI%20self--review%200%2F6%20%E2%86%92%20Gate%206%2F6-2ea44f)](https://github.com/VerificateAI/verificate-mcp-quickstart/blob/master/COMPARISON.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2ea44f.svg)](LICENSE)
 
 ## What it is
@@ -40,6 +40,8 @@ jobs:
 
 That's it. No signup, no API key, free to try — the next pull request gets checked. To remove it, delete the file.
 
+> **The gate reviews pull requests.** Commits pushed straight to a branch (e.g. directly to `main`) are not reviewed — the check only runs on `pull_request` events. To gate everything, protect your default branch so changes arrive through PRs (**Settings → Branches → Require a pull request before merging**).
+
 The `id-token: write` permission is what makes the free tier reliable in CI: GitHub-hosted runners share IP addresses across everyone, so an IP-based free quota gets used up by unrelated repos before your first run. With that permission, the gate proves your repository identity with a signed GitHub token and draws on **your repository's own free quota** instead — so your first run actually reviews your code. Leave the permission off and it still works, just falling back to the shared per-runner quota (which may already be used up).
 
 ## What you get
@@ -58,7 +60,7 @@ Every pull request gets a clear verdict, in plain English, right on the PR:
 
 - **Broken AI code never reaches your application.** A rejected change turns the check red and GitHub blocks the merge until it's fixed.
 - **A tireless first reviewer.** Humans skim; the gate reads every changed file, every time.
-- **It catches what AI review misses.** In our published benchmark, a leading AI model asked to review its own code caught **0 of 6** planted problems (a fake API and a self-passing test). Verificate Gate caught **6 of 6**, every run. [See the benchmark →](https://github.com/Verificate-Dev/verificate-mcp-quickstart/blob/master/COMPARISON.md)
+- **It catches what AI review misses.** In our published benchmark, a leading AI model asked to review its own code caught **0 of 6** planted problems (a fake API and a self-passing test). Verificate Gate caught **6 of 6**, every run. [See the benchmark →](https://github.com/VerificateAI/verificate-mcp-quickstart/blob/master/COMPARISON.md)
 - **Low noise, not just high recall.** The gate reasons about *reachability*: a `subprocess`/`exec`/`import` call fed by a CLI argument, a local config value, or a trusted literal is the intended behaviour of a dev tool or build script — not command injection — so it is not flagged. You get the real defects without a wall of false alarms that trains people to ignore the check.
 
 ## The problem: AI writes the code, humans carry the review
@@ -72,7 +74,7 @@ Verificate Gate supports the review process rather than replacing it. It applies
 Start in watch mode, switch to blocking when you trust it:
 
 1. **Watch mode** — set `fail-on: off`. The gate comments its verdict on every PR but never blocks anything. Run it for a week and see what it catches.
-2. **Blocking mode** — set `fail-on: reject` (the default) and add `verificate-gate` under **Settings → Branches → Require status checks**. Now a rejected change can't merge until it's fixed.
+2. **Blocking mode** — set `fail-on: reject` (the default) and add the required check under **Settings → Branches → Require status checks**. In that list it appears as **`Verificate Gate / verificate-gate`** (job name / workflow). Now a rejected change can't merge until it's fixed.
 
 Rejections come only from problems the gate can point to concretely (a nonexistent API, a placeholder, a self-passing test) — in our benchmark it raised **zero false alarms on clean code** — so turning on blocking mode rarely surprises anyone.
 
@@ -88,7 +90,7 @@ All settings are optional.
 |---|---|---|
 | `verificate-api-key` | — | Your own free key, for a private quota (the shared free tier works without one). |
 | `fail-on` | `reject` | `reject` = block the merge on a rejected change; `off` = comment only (watch mode). |
-| `max-files` | `25` | Most changed code files checked per pull request. |
+| `max-files` | `25` | Most changed code files reviewed per pull request. If a PR changes more, the gate reviews the first `max-files`, flags the rest in the PR comment, and leaves them unreviewed — raise this for large PRs. |
 | `mcp-url` | `https://mcp.verificate.ai/mcp` | Point at your own Verificate deployment if your code must not leave your infrastructure. |
 
 ```yaml
