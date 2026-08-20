@@ -2,7 +2,7 @@
 
 **Verificate Gate is an AI-powered CI gate for GitHub.** It protects your repository from AI hallucination — code that looks right but isn't real — and performs automated checks for **security, reliability, performance efficiency and maintainability (ISO 5055)** on every pull request. If a change has a real problem, the pull request is blocked until it's fixed.
 
-[![Verificate Gate](https://img.shields.io/badge/gated%20by-Verificate-2ea44f?logo=shield)](https://github.com/Verificate-Dev/verificate-gate-action)
+[![Verificate Gate](https://img.shields.io/badge/gated%20by-Verificate-2ea44f?logo=shield)](https://github.com/VerificateAI/verificate-gate-action)
 [![Benchmark](https://img.shields.io/badge/AI%20self--review%200%2F6%20%E2%86%92%20Gate%206%2F6-2ea44f)](https://github.com/Verificate-Dev/verificate-mcp-quickstart/blob/master/COMPARISON.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2ea44f.svg)](LICENSE)
 
@@ -35,7 +35,7 @@ jobs:
   verificate-gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: Verificate-Dev/verificate-gate-action@v1
+      - uses: VerificateAI/verificate-gate-action@v1
 ```
 
 That's it. No signup, no API key, free to try — the next pull request gets checked. To remove it, delete the file.
@@ -92,7 +92,7 @@ All settings are optional.
 | `mcp-url` | `https://mcp.verificate.ai/mcp` | Point at your own Verificate deployment if your code must not leave your infrastructure. |
 
 ```yaml
-      - uses: Verificate-Dev/verificate-gate-action@v1
+      - uses: VerificateAI/verificate-gate-action@v1
         with:
           verificate-api-key: ${{ secrets.VERIFICATE_API_KEY }}
           fail-on: reject
